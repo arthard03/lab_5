@@ -9,73 +9,88 @@ using lab_5.Models;
 [ApiController]
 public class AnimalsController : ControllerBase
 {
-    
     private readonly IConfiguration _configuration;
+
     public AnimalsController(IConfiguration configuration)
     {
         _configuration = configuration;
     }
 
-    private List<Dictionary<string, object>> ConvertDataTableToList(DataTable dt)
-    {
-        var columns = dt.Columns.Cast<DataColumn>();
-        return dt.Rows.Cast<DataRow>()
-            .Select(row => columns.ToDictionary(column => column.ColumnName, column => row[column])).ToList();
-    }
 
     [HttpGet]
     public IActionResult GetAnimals(string orderBy = "name")
     {
-        string query = $"SELECT * FROM Animals ORDER BY {orderBy}";
-        DataTable table = new DataTable();
-        string sqlDataSource = _configuration.GetConnectionString("DefaultConnection");
-        using (SqlConnection myCon = new SqlConnection(sqlDataSource))
+        try
         {
-            myCon.Open();
-            using (SqlCommand myCommand = new SqlCommand(query, myCon))
+            string query = $"SELECT * FROM Animals ORDER BY {orderBy}";
+
+            using (var connection = new SqlConnection(_configuration.GetConnectionString("DefaultConnection")))
             {
-                using (SqlDataReader myReader = myCommand.ExecuteReader())
+                connection.Open();
+                using (var command = new SqlCommand(query, connection))
                 {
-                    table.Load(myReader);
+                    using (var reader = command.ExecuteReader())
+                    {
+                        var animals = new List<Animals>();
+                        while (reader.Read())
+                        {
+                            animals.Add(new Animals
+                            {
+                                IdAnimal = Convert.ToInt32(reader["Id"]),
+                                Name = reader["Name"].ToString(),
+                                Description = reader["Description"].ToString(),
+                                Category = reader["Category"].ToString(),
+                                Area = reader["Area"].ToString()
+                            });
+                        }
+
+                        return Ok(animals); 
+                    }
                 }
             }
-            myCon.Close();
         }
-
-        var list = ConvertDataTableToList(table);
-        return Ok(list);
+        catch (Exception ex)
+        {
+            return StatusCode(500, $"Internal Server Error: {ex.Message}");
+        }
     }
+
 
     [HttpPost]
     public IActionResult PostAnimal(Animals animal)
     {
-        string query = @"
-           INSERT INTO Animals (Name, Description, Category, Area) 
-           VALUES (@Name, @Description, @Category, @Area)";
-        DataTable table = new DataTable();
-        string sqlDataSource = _configuration.GetConnectionString("DefaultConnection");
-        SqlDataReader myReader;
-        using (SqlConnection myCon = new SqlConnection(sqlDataSource))
+        try
         {
-            myCon.Open();
-            using (SqlCommand myCommand = new SqlCommand(query, myCon))
+            string query = @"
+            INSERT INTO Animals (Name, Description, Category, Area)
+            VALUES (@Name, @Description, @Category, @Area)";
+
+            using (var connection = new SqlConnection(_configuration.GetConnectionString("DefaultConnection")))
             {
-                myCommand.Parameters.AddWithValue("@Name", animal.Name);
-                myCommand.Parameters.AddWithValue("@Description", animal.Description);
-                myCommand.Parameters.AddWithValue("@Category", animal.Category);
-                myCommand.Parameters.AddWithValue("@Area", animal.Area);
-                myReader = myCommand.ExecuteReader();
-                table.Load(myReader);
-                myReader.Close();
-                myCon.Close();
+                connection.Open();
+                using (var command = new SqlCommand(query, connection))
+                {
+                    command.Parameters.AddWithValue("@Name", animal.Name);
+                    command.Parameters.AddWithValue("@Description", animal.Description);
+                    command.Parameters.AddWithValue("@Category", animal.Category);
+                    command.Parameters.AddWithValue("@Area", animal.Area);
+                    command.ExecuteNonQuery();
+                }
             }
+
+            return CreatedAtRoute("GetAnimalById", new { id = animal.IdAnimal }, animal);
         }
-        return new JsonResult("Added Successfully");
+        catch (Exception ex)
+        {
+            return Content("Error", "text/plain");
+        }
     }
+
+
     [HttpPut("{id}")]
     public IActionResult PutAnimal(int id, Animals animal)
     {
-        if (id != animal.IdAnimal) 
+        if (id != animal.IdAnimal)
         {
             return BadRequest("ID in URL and body must match");
         }
@@ -101,13 +116,14 @@ public class AnimalsController : ControllerBase
                 }
             }
 
-            return NoContent(); 
+            return NoContent();
         }
         catch (Exception ex)
         {
-            return StatusCode(500, $"Internal Server Error: {ex.Message}");
+            return Content("Error", "text/plain");
         }
     }
+
     [HttpDelete("{id}")]
     public IActionResult DeleteAnimal(int id)
     {
@@ -125,13 +141,11 @@ public class AnimalsController : ControllerBase
                 }
             }
 
-            return NoContent(); 
+            return NoContent();
         }
         catch (Exception ex)
         {
-            return StatusCode(500, $"Internal Server Error: {ex.Message}");
+            return Content("Error", "text/plain");
         }
-        
     }
 }
-
